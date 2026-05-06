@@ -211,6 +211,7 @@ package_dict["Classic"] = [['classic', default_name],
                     ['classic_no_limits', no_limits_name]]
 package_dict["Classicp"] = [['classicp', default_name],
                     ['classicp_no_limits', no_limits_name]]
+package_dict["Vega_V1_0"] = [['vega_V1_0', default_name]]
 
 # This is the firmware stub string
 res_firmwares_string = '        <file>TARGET_DESTINATION_DIRECTORY/TARGET_DESTINATION_FILENAME</file>\n'
