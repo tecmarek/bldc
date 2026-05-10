@@ -30,17 +30,16 @@
 #define SCTL_RESET_ON()			palClearPad(SCTL_RESET_GPIO, SCTL_RESET_PIN)
 #define SCTL_RESET_OFF()		palSetPad(SCTL_RESET_GPIO, SCTL_RESET_PIN)
 
+#define SCTL_INT_GPIO          GPIOA
+#define SCTL_INT_PIN           15
+
 #define GDRV_EN_GPIO			GPIOB
 #define GDRV_EN_PIN			    12
 
 #define ENABLE_GATE()			palSetPad(GDRV_EN_GPIO, GDRV_EN_PIN)
 #define DISABLE_GATE()			palClearPad(GDRV_EN_GPIO, GDRV_EN_PIN)
 
-#define DRV_FAULT_GPIO          GPIOA
-#define DRV_FAULT_PIN           15
-
-#define IS_DRV_FAULT()			palReadPad(DRV_FAULT_GPIO, DRV_FAULT_PIN)
-
+#define IS_DRV_FAULT()			check_drv_fault()
 
 // Phase Filter
 #define PHASE_FILTER_U_GPIO		GPIOC
@@ -169,14 +168,14 @@
 
 // Temperature Sensors
 #define NTC_RES(adc_val)		(10000.0 / ((4095.0 / (float)adc_val) - 1.0))
-#define NTC_TEMP(adc_ind)		mos_get_high_temp()
+#define NTC_TEMP(adc_ind)		20.0//mos_get_high_temp()
 
 #define NTC_RES_MOTOR(adc_val)	(10000.0 / ((4095.0 / (float)adc_val) - 1.0)) // Motor temp sensor on low side
 #define NTC_TEMP_MOTOR(beta)	(1.0 / ((logf(NTC_RES_MOTOR(ADC_Value[ADC_IND_TEMP_MOTOR]) / 10000.0) / beta) + (1.0 / 298.15)) - 273.15)
 
-#define NTC_TEMP_MOS1()         mos_phase_get_high_temp(ADC_IND_TEMP_MOS_H_U, ADC_IND_TEMP_MOS_L_U)
-#define NTC_TEMP_MOS2()         mos_phase_get_high_temp(ADC_IND_TEMP_MOS_H_V, ADC_IND_TEMP_MOS_L_V)
-#define NTC_TEMP_MOS3()         mos_phase_get_high_temp(ADC_IND_TEMP_MOS_H_W, ADC_IND_TEMP_MOS_L_W)
+#define NTC_TEMP_MOS1()         21.0//mos_phase_get_high_temp(ADC_IND_TEMP_MOS_H_U, ADC_IND_TEMP_MOS_L_U)
+#define NTC_TEMP_MOS2()         22.0//mos_phase_get_high_temp(ADC_IND_TEMP_MOS_H_V, ADC_IND_TEMP_MOS_L_V)
+#define NTC_TEMP_MOS3()         23.0//mos_phase_get_high_temp(ADC_IND_TEMP_MOS_H_W, ADC_IND_TEMP_MOS_L_W)
 
 // UART Peripheral - Not used same pins as I2C
 #define HW_UART_DEV				SD3
@@ -294,5 +293,6 @@
 // HW-specific functions
 float mos_get_high_temp(void);
 float mos_phase_get_high_temp(uint8_t adc_ind_h, uint8_t adc_ind_l);
+uint8_t check_drv_fault(void); 
 
 #endif /* HW_VEGA_CORE_H_ */

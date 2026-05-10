@@ -7,9 +7,74 @@
 #include "mc_interface.h"
 #include "lispif.h"
 #include "lispbm.h"
+#include "terminal.h"
+#include "commands.h"
+
+//TCAL6416
+#define TCAL_ADDR						0x20
+#define TCAL_TIMEOUT					MS2ST(5)
+
+typedef enum {
+	TCAL_Input_Port_0_ADDR 							= 0x00,
+	TCAL_Input_Port_1_ADDR 							= 0x01,
+	TCAL_Output_Port_0_ADDR 						= 0x02,
+	TCAL_Output_Port_1_ADDR 						= 0x03,
+	TCAL_Polarity_Inversion_Port_0_ADDR 			= 0x04,
+	TCAL_Polarity_Inversion_Port_1_ADDR 			= 0x05,
+	TCAL_Configuration_Port_0_ADDR 					= 0x06,
+	TCAL_Configuration_Port_1_ADDR 					= 0x07,
+	TCAL_Output_Drive_Strength_Port_00_ADDR 		= 0x40,
+	TCAL_Output_Drive_Strength_Port_01_ADDR 		= 0x41,
+	TCAL_Output_Drive_Strength_Port_10_ADDR 		= 0x42,
+	TCAL_Output_Drive_Strength_Port_11_ADDR 		= 0x43,
+	TCAL_Input_latch_register_Port_0_ADDR 			= 0x44,
+	TCAL_Input_latch_register_Port_1_ADDR 			= 0x45,
+	TCAL_PU_PD_enable_Port_0_ADDR 					= 0x46,
+	TCAL_PU_PD_enable_Port_1_ADDR 					= 0x47,
+	TCAL_PU_PD_selection_Port_0_ADDR 				= 0x48,
+	TCAL_PU_PD_selection_Port_1_ADDR 				= 0x49,
+	TCAL_Interrupt_mask_register_Port_0_ADDR 		= 0x4A,
+	TCAL_Interrupt_mask_register_Port_1_ADDR 		= 0x4B,
+	TCAL_Interrupt_status_register_Port_0_ADDR 		= 0x4C,
+	TCAL_Interrupt_status_register_Port_1_ADDR 		= 0x4D,
+	TCAL_Output_port_configuration_register_ADDR 	= 0x4F
+} TCAL_RegistersAddrTypeDef;
+
+typedef struct {
+	uint8_t
+		GPIO_0 : 1,
+		GPIO_1 : 1,
+		GPIO_2 : 1,
+		GPIO_3 : 1,
+		GPIO_4 : 1,
+		GPIO_5 : 1,
+		GPIO_6 : 1,
+		GPIO_7 : 1;
+} TCAL_GPIOTypeDef; 
+
+typedef union {
+	uint8_t generic;
+	TCAL_GPIOTypeDef IO;
+} TCAL_RegisterUnionTypeDef;
+
+
+static mutex_t tcal_mtx;
+TCAL_RegisterUnionTypeDef SCTL_GPIO_Port0 = {0};
+TCAL_RegisterUnionTypeDef SCTL_GPIO_Port1 = {0};
+TCAL_RegisterUnionTypeDef SCTL_INT_GPIO_Port0 = {0xFF};
+TCAL_RegisterUnionTypeDef SCTL_INT_GPIO_Port1 = {0xFF};
+TCAL_RegisterUnionTypeDef SCTL_INT_Status_GPIO_Port0 = {0};
+TCAL_RegisterUnionTypeDef SCTL_INT_Status_GPIO_Port1 = {0};
+
+// Terminal functions
+static void terminal_cmd_get_sctl_state(int argc, const char **argv);
+static void terminal_cmd_get_sctl_last_fault(int argc, const char **argv);
 
 // Variables
 static volatile bool i2c_running = false;
+static THD_WORKING_AREA(mux_thread_wa, 256);
+static THD_FUNCTION(mux_thread, arg);
+static volatile bool mux_thd_running = false;
 
 // I2C configuration
 static const I2CConfig i2cfg = {
@@ -96,6 +161,24 @@ void hw_init_gpio(void) {
 	palSetPadMode(GPIOC, 5, PAL_MODE_INPUT_ANALOG);
 
 	//lispif_add_ext_load_callback(load_extensions); // ToDO check waht this is for
+
+	if (!mux_thd_running) {
+		chMtxObjectInit(&tcal_mtx);
+		chThdCreateStatic(mux_thread_wa, sizeof(mux_thread_wa), NORMALPRIO, mux_thread, NULL);
+		mux_thd_running = true;
+	}
+
+	terminal_register_command_callback(
+			"sctl_state",
+			"Print SCTL state",
+			0,
+			terminal_cmd_get_sctl_state);
+
+	terminal_register_command_callback(
+			"sctl_fault",
+			"Print SCTL last registered fault",
+			0,
+			terminal_cmd_get_sctl_last_fault);
 }
 
 void hw_setup_adc_channels(void) {
@@ -258,4 +341,194 @@ float mos_phase_get_high_temp(uint8_t adc_ind_h, uint8_t adc_ind_l) {
 	if (l > res) res = l;
 
 	return res;
+}
+
+uint8_t check_drv_fault(void) {
+	if(palReadPad(SCTL_INT_GPIO, SCTL_INT_PIN) == PAL_LOW){
+		return 1;
+	}
+
+	if(SCTL_GPIO_Port0.generic != 0xFF || SCTL_GPIO_Port1.generic != 0xFF){
+		return 1;
+	}
+
+	return 0;
+}
+
+static void terminal_cmd_get_sctl_state(int argc, const char **argv) {
+	(void)argc;
+	(void)argv;
+
+	chMtxLock(&tcal_mtx);
+
+	commands_printf("SCTL State:");
+	commands_printf("Signals in fault state will indicate as 0\n");
+
+	commands_printf("Phase U - Fault High   : %d", SCTL_GPIO_Port0.IO.GPIO_0);
+	commands_printf("Phase U - Fault Low    : %d", SCTL_GPIO_Port0.IO.GPIO_1);
+	commands_printf("Phase U - Power Good   : %d", SCTL_GPIO_Port0.IO.GPIO_2);
+	commands_printf("Phase U - Over Current : %d", SCTL_GPIO_Port0.IO.GPIO_3);
+
+	commands_printf("Phase V - Fault High   : %d", SCTL_GPIO_Port0.IO.GPIO_4);
+	commands_printf("Phase V - Fault Low    : %d", SCTL_GPIO_Port0.IO.GPIO_5);
+	commands_printf("Phase V - Power Good   : %d", SCTL_GPIO_Port0.IO.GPIO_6);
+	commands_printf("Phase V - Over Current : %d", SCTL_GPIO_Port0.IO.GPIO_7);
+
+	commands_printf("Phase W - Fault High   : %d", SCTL_GPIO_Port1.IO.GPIO_3);
+	commands_printf("Phase W - Fault Low    : %d", SCTL_GPIO_Port1.IO.GPIO_2);
+	commands_printf("Phase W - Power Good   : %d", SCTL_GPIO_Port1.IO.GPIO_1);
+	commands_printf("Phase W - Over Current : %d", SCTL_GPIO_Port1.IO.GPIO_0);
+
+	commands_printf("Logic - SDC State      : %d", SCTL_GPIO_Port1.IO.GPIO_4);
+
+	if(check_drv_fault()){
+		commands_printf("Active DRV fault");
+	}
+
+	chMtxUnlock(&tcal_mtx);
+}
+
+static void print_sctl_fault(const char *label, int value, int int_status) {
+	// Print value if GPIO is at 0 or if it triggered the interrupt
+    if (value == 0 || int_status == 1) {
+        commands_printf("%-22s : %d%s", 
+                        label, 
+                        value, 
+                        (int_status == 1) ? " [t]" : "");
+    }
+}
+
+static void terminal_cmd_get_sctl_last_fault(int argc, const char **argv) {
+	(void)argc;
+	(void)argv;
+
+	chMtxLock(&tcal_mtx);
+
+	commands_printf("SCTL last Fault:");
+	commands_printf("Signals in fault state will indicate as 0. The trigger sources of the interrupt are marked with [t]\n");
+
+    print_sctl_fault("Phase U - Fault High",   SCTL_INT_GPIO_Port0.IO.GPIO_0, SCTL_INT_Status_GPIO_Port0.IO.GPIO_0);
+    print_sctl_fault("Phase U - Fault Low",    SCTL_INT_GPIO_Port0.IO.GPIO_1, SCTL_INT_Status_GPIO_Port0.IO.GPIO_1);
+    print_sctl_fault("Phase U - Power Good",   SCTL_INT_GPIO_Port0.IO.GPIO_2, SCTL_INT_Status_GPIO_Port0.IO.GPIO_2);
+    print_sctl_fault("Phase U - Over Current", SCTL_INT_GPIO_Port0.IO.GPIO_3, SCTL_INT_Status_GPIO_Port0.IO.GPIO_3);
+
+    print_sctl_fault("Phase V - Fault High",   SCTL_INT_GPIO_Port0.IO.GPIO_4, SCTL_INT_Status_GPIO_Port0.IO.GPIO_4);
+    print_sctl_fault("Phase V - Fault Low",    SCTL_INT_GPIO_Port0.IO.GPIO_5, SCTL_INT_Status_GPIO_Port0.IO.GPIO_5);
+    print_sctl_fault("Phase V - Power Good",   SCTL_INT_GPIO_Port0.IO.GPIO_6, SCTL_INT_Status_GPIO_Port0.IO.GPIO_6);
+    print_sctl_fault("Phase V - Over Current", SCTL_INT_GPIO_Port0.IO.GPIO_7, SCTL_INT_Status_GPIO_Port0.IO.GPIO_7);
+
+    print_sctl_fault("Phase W - Fault High",   SCTL_INT_GPIO_Port1.IO.GPIO_3, SCTL_INT_Status_GPIO_Port1.IO.GPIO_3);
+    print_sctl_fault("Phase W - Fault Low",    SCTL_INT_GPIO_Port1.IO.GPIO_2, SCTL_INT_Status_GPIO_Port1.IO.GPIO_2);
+    print_sctl_fault("Phase W - Power Good",   SCTL_INT_GPIO_Port1.IO.GPIO_1, SCTL_INT_Status_GPIO_Port1.IO.GPIO_1);
+    print_sctl_fault("Phase W - Over Current", SCTL_INT_GPIO_Port1.IO.GPIO_0, SCTL_INT_Status_GPIO_Port1.IO.GPIO_0);
+
+    print_sctl_fault("Logic - SDC State",      SCTL_INT_GPIO_Port1.IO.GPIO_4, SCTL_INT_Status_GPIO_Port1.IO.GPIO_4);
+
+	if(check_drv_fault()){
+		commands_printf("Active DRV fault");
+	}
+
+	chMtxUnlock(&tcal_mtx);
+}
+
+msg_t tcal_write_reg(TCAL_RegistersAddrTypeDef reg, TCAL_RegisterUnionTypeDef *data) {
+	uint8_t txbuf[2] = {reg, data->generic};
+
+	i2cAcquireBus(&HW_I2C_DEV);
+	msg_t status = i2cMasterTransmitTimeout(&HW_I2C_DEV, TCAL_ADDR, txbuf, 2, NULL, 0, TCAL_TIMEOUT);
+	i2cReleaseBus(&HW_I2C_DEV);
+
+	return status;
+}
+
+msg_t tcal_read_reg(TCAL_RegistersAddrTypeDef reg, TCAL_RegisterUnionTypeDef *data) {
+	uint8_t txbuf[1] = {reg};
+
+	i2cAcquireBus(&HW_I2C_DEV);
+	msg_t status = i2cMasterTransmitTimeout(&HW_I2C_DEV, TCAL_ADDR, txbuf, 1, (uint8_t *)data, 1, TCAL_TIMEOUT);
+	i2cReleaseBus(&HW_I2C_DEV);
+
+	return status;
+}
+
+static THD_FUNCTION(mux_thread, arg) {
+	(void)arg;
+
+	chRegSetThreadName("SCTL");
+
+	msg_t status = MSG_OK;
+
+	hw_start_i2c();
+	chThdSleepMilliseconds(10);
+
+	// Setup inputs
+	TCAL_RegisterUnionTypeDef SCTL_PU_PD_state = {0xFF};
+
+	tcal_write_reg(TCAL_PU_PD_enable_Port_0_ADDR, &SCTL_PU_PD_state);
+	tcal_write_reg(TCAL_PU_PD_enable_Port_1_ADDR, &SCTL_PU_PD_state);
+
+	TCAL_RegisterUnionTypeDef SCTL_PU_PD_direction_port_0 = {0};
+	SCTL_PU_PD_direction_port_0.IO.GPIO_2 = 1;
+	SCTL_PU_PD_direction_port_0.IO.GPIO_6 = 1;
+	TCAL_RegisterUnionTypeDef SCTL_PU_PD_direction_port_1 = {0};
+	SCTL_PU_PD_direction_port_1.IO.GPIO_1 = 1;
+	SCTL_PU_PD_direction_port_1.IO.GPIO_5 = 1;
+	SCTL_PU_PD_direction_port_1.IO.GPIO_6 = 1;
+	SCTL_PU_PD_direction_port_1.IO.GPIO_7 = 1;
+
+	tcal_write_reg(TCAL_PU_PD_selection_Port_0_ADDR, &SCTL_PU_PD_direction_port_0);
+	tcal_write_reg(TCAL_PU_PD_selection_Port_1_ADDR, &SCTL_PU_PD_direction_port_1);
+
+	// Invert polarity for Power Good pins
+	TCAL_RegisterUnionTypeDef SCTL_inv_port_0 = {0};
+	SCTL_inv_port_0.IO.GPIO_2 = 1;
+	SCTL_inv_port_0.IO.GPIO_6 = 1;
+
+	TCAL_RegisterUnionTypeDef SCTL_inv_port_1 = {0};
+	SCTL_inv_port_1.IO.GPIO_1 = 1;
+
+	tcal_write_reg(TCAL_Polarity_Inversion_Port_0_ADDR, &SCTL_inv_port_0);
+	tcal_write_reg(TCAL_Polarity_Inversion_Port_1_ADDR, &SCTL_inv_port_1);
+
+	// Setup latch
+	TCAL_RegisterUnionTypeDef SCTL_active_latch_port_0 = {0xFF}; // All
+	TCAL_RegisterUnionTypeDef SCTL_active_latch_port_1 = {0xFF};
+	SCTL_active_latch_port_1.IO.GPIO_5 = 0;
+	SCTL_active_latch_port_1.IO.GPIO_6 = 0;
+	SCTL_active_latch_port_1.IO.GPIO_7 = 0;
+
+	tcal_write_reg(TCAL_Input_latch_register_Port_0_ADDR, &SCTL_active_latch_port_0);
+	tcal_write_reg(TCAL_Input_latch_register_Port_1_ADDR, &SCTL_active_latch_port_1);
+
+	// Setup interrupt
+	TCAL_RegisterUnionTypeDef SCTL_active_iterrupt_port_0 = {~SCTL_active_latch_port_0.generic}; // Invert as active mask state is 0
+	TCAL_RegisterUnionTypeDef SCTL_active_iterrupt_port_1 = {~SCTL_active_latch_port_1.generic}; // Invert as active mask state is 0
+
+	tcal_write_reg(TCAL_Interrupt_mask_register_Port_0_ADDR, &SCTL_active_iterrupt_port_0);
+	tcal_write_reg(TCAL_Interrupt_mask_register_Port_1_ADDR, &SCTL_active_iterrupt_port_1);
+
+	for (;;) {
+
+		chMtxLock(&tcal_mtx);
+
+		uint8_t tcal_interrupt = palReadPad(SCTL_INT_GPIO, SCTL_INT_PIN);
+
+		// Reading input registers also clears interrupt
+		tcal_read_reg(TCAL_Input_Port_0_ADDR, &SCTL_GPIO_Port0);
+		tcal_read_reg(TCAL_Input_Port_1_ADDR, &SCTL_GPIO_Port1);
+
+		if(tcal_interrupt == PAL_LOW){ // Interrupt active
+			// Store interrupt snapshot
+			SCTL_INT_GPIO_Port0 = SCTL_GPIO_Port0;
+			SCTL_INT_GPIO_Port1 = SCTL_GPIO_Port1;
+
+			//Read interrupt status
+			tcal_read_reg(TCAL_Interrupt_status_register_Port_0_ADDR, &SCTL_INT_Status_GPIO_Port0);
+			tcal_read_reg(TCAL_Interrupt_status_register_Port_1_ADDR, &SCTL_INT_Status_GPIO_Port1);
+		}
+
+		chMtxUnlock(&tcal_mtx);
+
+		chThdSleepMilliseconds(250);
+	}
 }
