@@ -137,7 +137,7 @@
 #define ADC_IND_TEMP_MOS ADC_IND_TEMP_MOS_H_V
 
 // ADC macros and settings
-#define VOLTAGE_TRANSFER_FUNCTION     291.9091 //[V/V]
+#define VOLTAGE_TRANSFER_FUNCTION     225.816 //[V/V] Needs to account for voltage divider and internal IC transfere function
 #define CURRENT_TRANSFER_FUNCTION     0.0099 //[V/A]
 
 // Component parameters (can be overridden) - Definitions are used across software, so terminology has to be kept
@@ -233,6 +233,14 @@
 #define HW_SPI_PORT_MISO		GPIOA
 #define HW_SPI_PIN_MISO			6
 
+// CAN device and port for CAN2
+#define HW_CAN2_RX_PORT			GPIOB
+#define HW_CAN2_RX_PIN			5
+#define HW_CAN2_TX_PORT			GPIOB
+#define HW_CAN2_TX_PIN			6
+#define HW_CAN2_GPIO_AF			GPIO_AF_CAN2
+#define HW_CAN2_DEV				CAND2
+
 // Measurement macros
 #define ADC_V_L1				ADC_Value[ADC_IND_SENS1]
 #define ADC_V_L2				ADC_Value[ADC_IND_SENS2]
@@ -265,7 +273,7 @@
 #endif
 
 #ifndef MCCONF_FOC_SAMPLE_V0_V7
-#define MCCONF_FOC_SAMPLE_V0_V7			true	// Run control loop in both v0 and v7 (requires phase shunts)
+#define MCCONF_FOC_SAMPLE_V0_V7			false	// Run control loop in both v0 and v7 (requires phase shunts)
 #endif
 
 #ifndef MCCONF_L_IN_CURRENT_MAX
@@ -289,6 +297,7 @@
 #define HW_LIM_DUTY_MIN			0.0, 0.1
 #define HW_LIM_DUTY_MAX			0.0, 0.99
 #define HW_LIM_TEMP_FET			-40.0, 110.0
+#define HW_LIM_FOC_CTRL_LOOP_FREQ	16000.0, 50000.0 // Dont use v0 and v7 with frequencies higher than 30kHz or the RTOS might crash
 
 // HW-specific functions
 float mos_get_high_temp(void);
