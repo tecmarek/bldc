@@ -73,6 +73,8 @@ TCAL_RegisterUnionTypeDef SCTL_INT_Status_GPIO_Port1 = {0};
 // Terminal functions
 static void terminal_cmd_get_sctl_state(int argc, const char **argv);
 static void terminal_cmd_get_sctl_last_fault(int argc, const char **argv);
+static void terminal_cmd_raw_voltages(int argc, const char **argv);
+static void terminal_cmd_temperatures(int argc, const char **argv);
 static void terminal_cmd_doublepulse(int argc, const char** argv);
 
 // Variables
@@ -186,10 +188,22 @@ void hw_init_gpio(void) {
 			terminal_cmd_get_sctl_last_fault);
 
 	terminal_register_command_callback(
-		"double_pulse",
-		"Start a double pulse test",
-		0,
-		terminal_cmd_doublepulse);
+			"raw_volts",
+			"Print raw ADC input voltages",
+			0,
+			terminal_cmd_raw_voltages);
+
+	terminal_register_command_callback(
+			"temperatures",
+			"Print temperature sensor values",
+			0,
+			terminal_cmd_temperatures);
+
+	terminal_register_command_callback(
+			"double_pulse",
+			"Start a double pulse test",
+			0,
+			terminal_cmd_doublepulse);
 }
 
 void hw_setup_adc_channels(void) {
@@ -327,12 +341,12 @@ void hw_try_restore_i2c(void) {
 }
 
 float mos_get_high_temp(void) {
-	float uh = (1.0 / ((logf(NTC_RES(ADC_Value[ADC_IND_TEMP_MOS_H_U]) / 10000.0) / 3380.0) + (1.0 / 298.15)) - 273.15);
-	float ul = (1.0 / ((logf(NTC_RES(ADC_Value[ADC_IND_TEMP_MOS_L_U]) / 10000.0) / 3380.0) + (1.0 / 298.15)) - 273.15);
-	float vh = (1.0 / ((logf(NTC_RES(ADC_Value[ADC_IND_TEMP_MOS_H_V]) / 10000.0) / 3380.0) + (1.0 / 298.15)) - 273.15);
-	float vl = (1.0 / ((logf(NTC_RES(ADC_Value[ADC_IND_TEMP_MOS_L_V]) / 10000.0) / 3380.0) + (1.0 / 298.15)) - 273.15);
-	float wh = (1.0 / ((logf(NTC_RES(ADC_Value[ADC_IND_TEMP_MOS_H_W]) / 10000.0) / 3380.0) + (1.0 / 298.15)) - 273.15);
-	float wl = (1.0 / ((logf(NTC_RES(ADC_Value[ADC_IND_TEMP_MOS_L_W]) / 10000.0) / 3380.0) + (1.0 / 298.15)) - 273.15);
+	float uh = NTC_TEMP_CONV(ADC_IND_TEMP_MOS_H_U);
+	float ul = NTC_TEMP_CONV(ADC_IND_TEMP_MOS_L_U);
+	float vh = NTC_TEMP_CONV(ADC_IND_TEMP_MOS_H_V);
+	float vl = NTC_TEMP_CONV(ADC_IND_TEMP_MOS_L_V);
+	float wh = NTC_TEMP_CONV(ADC_IND_TEMP_MOS_H_W);
+	float wl = NTC_TEMP_CONV(ADC_IND_TEMP_MOS_L_W);
 	float res = uh;
 
 	if (ul > res) res = ul;
@@ -345,8 +359,8 @@ float mos_get_high_temp(void) {
 }
 
 float mos_phase_get_high_temp(uint8_t adc_ind_h, uint8_t adc_ind_l) {
-	float h = (1.0 / ((logf(NTC_RES(ADC_Value[adc_ind_h]) / 10000.0) / 3380.0) + (1.0 / 298.15)) - 273.15);
-	float l = (1.0 / ((logf(NTC_RES(ADC_Value[adc_ind_l]) / 10000.0) / 3380.0) + (1.0 / 298.15)) - 273.15);
+	float h = NTC_TEMP_CONV(adc_ind_h);
+	float l = NTC_TEMP_CONV(adc_ind_l);
 	float res = h;
 
 	if (l > res) res = l;
@@ -355,6 +369,7 @@ float mos_phase_get_high_temp(uint8_t adc_ind_h, uint8_t adc_ind_l) {
 }
 
 uint8_t check_drv_fault(void) {
+	
 	if(palReadPad(SCTL_INT_GPIO, SCTL_INT_PIN) == PAL_LOW){
 		return 1;
 	}
@@ -544,6 +559,48 @@ static THD_FUNCTION(mux_thread, arg) {
 
 		chThdSleepMilliseconds(250);
 	}
+}
+
+static void terminal_cmd_raw_voltages(int argc, const char **argv) {
+	(void)argc;
+	(void)argv;
+
+	commands_printf("Raw input voltages of ADC channels:\n");
+
+	commands_printf("U DC         : %.2f", (double)ADC_VOLTS(ADC_IND_VIN_SENS));
+	commands_printf("U Phase U    : %.2f", (double)ADC_VOLTS(ADC_IND_SENS1));
+	commands_printf("U Phase V    : %.2f", (double)ADC_VOLTS(ADC_IND_SENS2));
+	commands_printf("U Phase W    : %.2f\n", (double)ADC_VOLTS(ADC_IND_SENS3));
+
+	commands_printf("I Phase U    : %.2f", (double)ADC_VOLTS(ADC_IND_CURR1));
+	commands_printf("I Phase V    : %.2f", (double)ADC_VOLTS(ADC_IND_CURR2));
+	commands_printf("I Phase W    : %.2f\n", (double)ADC_VOLTS(ADC_IND_CURR3));
+
+	commands_printf("Encoder SIN  : %.2f", (double)ENCODER_SIN_VOLTS);
+	commands_printf("Encoder COS  : %.2f", (double)ENCODER_COS_VOLTS);
+	commands_printf("Motor Temp   : %.2f\n", (double)ADC_VOLTS(ADC_IND_TEMP_MOTOR));
+
+	commands_printf("Temp UH      : %.2f", (double)ADC_VOLTS(ADC_IND_TEMP_MOS_H_U));
+	commands_printf("Temp UL      : %.2f", (double)ADC_VOLTS(ADC_IND_TEMP_MOS_L_U));
+	commands_printf("Temp VH      : %.2f", (double)ADC_VOLTS(ADC_IND_TEMP_MOS_H_V));
+	commands_printf("Temp VL      : %.2f", (double)ADC_VOLTS(ADC_IND_TEMP_MOS_L_V));
+	commands_printf("Temp WH      : %.2f", (double)ADC_VOLTS(ADC_IND_TEMP_MOS_H_W));
+	commands_printf("Temp WL      : %.2f", (double)ADC_VOLTS(ADC_IND_TEMP_MOS_L_W));
+}
+
+static void terminal_cmd_temperatures(int argc, const char **argv) {
+	(void)argc;
+	(void)argv;
+
+	commands_printf("Temperature sensors:\n");
+
+	commands_printf("Temp UH      : %.2fC", (double)NTC_TEMP_CONV(ADC_IND_TEMP_MOS_H_U));
+	commands_printf("Temp UL      : %.2fC", (double)NTC_TEMP_CONV(ADC_IND_TEMP_MOS_L_U));
+	commands_printf("Temp VH      : %.2fC", (double)NTC_TEMP_CONV(ADC_IND_TEMP_MOS_H_V));
+	commands_printf("Temp VL      : %.2fC", (double)NTC_TEMP_CONV(ADC_IND_TEMP_MOS_L_V));
+	commands_printf("Temp WH      : %.2fC", (double)NTC_TEMP_CONV(ADC_IND_TEMP_MOS_H_W));
+	commands_printf("Temp WL      : %.2fC", (double)NTC_TEMP_CONV(ADC_IND_TEMP_MOS_L_W));
+	commands_printf("Temp Motor   : %.2fC", (double)mc_interface_temp_motor_filtered());
 }
 
 static void terminal_cmd_doublepulse(int argc, const char **argv)

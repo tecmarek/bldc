@@ -95,8 +95,8 @@
  * 4  (2):	IN1	    SENS2 - V
  * 5  (3):	IN2	    SENS3 - W
  * 
- * 6  (1):  IN15    ADC_IND_EXT4 - COS   
- * 7  (2):	IN14    ADC_IND_EXT3 - SIN
+ * 6  (1):  IN15    ADC_IND_EXT2 - COS   
+ * 7  (2):	IN14    ADC_IND_EXT  - SIN
  * 8  (3):	IN13    ADC_IND_TEMP_MOTOR
  * 
  * 9  (1):	IN5     ADC_IND_TEMP_MOS_L_U
@@ -166,8 +166,13 @@
 // Voltage on ADC channel
 #define ADC_VOLTS(ch)			((float)ADC_Value[ch] / 4096.0 * V_REG)
 
+// UCC21755 aPWM
+#define UCC_CLAMP_DUTY(val)     ((val) / 3.3f < 0.10f ? 0.10f : ((val) / 3.3f > 0.88f ? 0.88f : (val) / 3.3f)) // Clamp voltage to valid range
+#define UCC_V_AIN(duty)         (4.50f - (((duty) - 0.10f) / 0.78f) * 3.90f) // Reconstructs V_AIN from clamped duty cycle - mapping function 88% = 0.6V , 10% = 4.5V
+#define UCC_NTC_RES(adc_ind)    (((UCC_V_AIN(UCC_CLAMP_DUTY(ADC_VOLTS(adc_ind)))) / 0.000200f) - 1000.0f) // Calculates NTC resistance using the internal 200uA current source, subtract filter resistor
+
 // Temperature Sensors
-#define NTC_RES(adc_val)		(10000.0 / ((4095.0 / (float)adc_val) - 1.0))
+#define NTC_TEMP_CONV(adc_ind)  (1.0 / ((logf(UCC_NTC_RES(adc_ind) / 10000.0) / 3435.0) + (1.0 / 298.15)) - 273.15)
 #define NTC_TEMP(adc_ind)		20.0//mos_get_high_temp()
 
 #define NTC_RES_MOTOR(adc_val)	(10000.0 / ((4095.0 / (float)adc_val) - 1.0)) // Motor temp sensor on low side
