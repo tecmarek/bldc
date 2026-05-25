@@ -173,14 +173,14 @@
 
 // Temperature Sensors
 #define NTC_TEMP_CONV(adc_ind)  (1.0 / ((logf(UCC_NTC_RES(adc_ind) / 10000.0) / 3435.0) + (1.0 / 298.15)) - 273.15)
-#define NTC_TEMP(adc_ind)		20.0//mos_get_high_temp()
+#define NTC_TEMP(adc_ind)		mos_get_high_temp()
 
 #define NTC_RES_MOTOR(adc_val)	(10000.0 / ((4095.0 / (float)adc_val) - 1.0)) // Motor temp sensor on low side
 #define NTC_TEMP_MOTOR(beta)	(1.0 / ((logf(NTC_RES_MOTOR(ADC_Value[ADC_IND_TEMP_MOTOR]) / 10000.0) / beta) + (1.0 / 298.15)) - 273.15)
 
-#define NTC_TEMP_MOS1()         21.0//mos_phase_get_high_temp(ADC_IND_TEMP_MOS_H_U, ADC_IND_TEMP_MOS_L_U)
-#define NTC_TEMP_MOS2()         22.0//mos_phase_get_high_temp(ADC_IND_TEMP_MOS_H_V, ADC_IND_TEMP_MOS_L_V)
-#define NTC_TEMP_MOS3()         23.0//mos_phase_get_high_temp(ADC_IND_TEMP_MOS_H_W, ADC_IND_TEMP_MOS_L_W)
+#define NTC_TEMP_MOS1()         mos_phase_get_high_temp(ADC_IND_TEMP_MOS_H_U, ADC_IND_TEMP_MOS_L_U)
+#define NTC_TEMP_MOS2()         mos_phase_get_high_temp(ADC_IND_TEMP_MOS_H_V, ADC_IND_TEMP_MOS_L_V)
+#define NTC_TEMP_MOS3()         mos_phase_get_high_temp(ADC_IND_TEMP_MOS_H_W, ADC_IND_TEMP_MOS_L_W)
 
 // UART Peripheral - Not used same pins as I2C
 #define HW_UART_DEV				SD3
@@ -258,7 +258,7 @@
 #define READ_HALL3()			palReadPad(HW_HALL_ENC_GPIO3, HW_HALL_ENC_PIN3)
 
 // Override dead time. See the stm32f4 reference manual for calculating this value.
-#define HW_DEAD_TIME_NSEC		1000.0 //ToDo: calculate correct value for HW see paper
+#define HW_DEAD_TIME_NSEC		250.0 // Conservative estimate 
 
 // Default setting overrides
 #ifndef MCCONF_L_MIN_VOLTAGE
